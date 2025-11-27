@@ -14,6 +14,7 @@
 
 static const rclcpp::Logger LOGGER = rclcpp::get_logger("move_group_node");
 static const std::string PLANNING_GROUP_ROBOT = "ur_manipulator";
+static const std::string PLANNING_GROUP_GRIPPER = "gripper";
 
 class PickAndPlace {
 public:
@@ -30,10 +31,15 @@ public:
     // Init move group interfaces
     move_group_robot_ = std::make_shared<MoveGroupInterface>(
         move_group_node_, PLANNING_GROUP_ROBOT);
-    // Get init state of robot
+    move_group_gripper_ = std::make_shared<MoveGroupInterface>(
+        move_group_node_, PLANNING_GROUP_GRIPPER);
+    // Get init state
     joint_model_group_robot_ =
         move_group_robot_->getCurrentState()->getJointModelGroup(
             PLANNING_GROUP_ROBOT);
+    joint_model_group_gripper_ =
+        move_group_gripper_->getCurrentState()->getJointModelGroup(
+            PLANNING_GROUP_GRIPPER);
     // print out basic system information
     RCLCPP_INFO(LOGGER, "Planning Frame: %s",
                 move_group_robot_->getPlanningFrame().c_str());
@@ -48,10 +54,14 @@ public:
 
     // get current state of robot
     current_state_robot_ = move_group_robot_->getCurrentState(10);
+    current_state_gripper_ = move_group_gripper_->getCurrentState(10);
     current_state_robot_->copyJointGroupPositions(joint_model_group_robot_,
                                                   joint_group_positions_robot_);
+    current_state_gripper_->copyJointGroupPositions(
+        joint_model_group_gripper_, joint_group_positions_gripper_);
     // Set start state of robot to current state
     move_group_robot_->setStartStateToCurrentState();
+    move_group_gripper_->setStartStateToCurrentState();
 
     RCLCPP_INFO(LOGGER, "Initialized Class: Pick And Place");
   }
@@ -61,14 +71,22 @@ public:
   void execute_trajectory() {
     RCLCPP_INFO(LOGGER, "Executing Pick And Place");
 
-    RCLCPP_INFO(LOGGER, "Preparing Joint Value Trajectory");
     // setup_joint_value_target(+0.0000, -2.3562, +1.5708, -1.5708, -1.5708,
     //                          +0.0000);
     setup_goal_pose_target(+0.343, +0.132, +0.284, -1.000, +0.000, +0.000,
                            +0.000);
-    RCLCPP_INFO(LOGGER, "Planning Joint Value Trajectory");
-    plan_trajectory_kinematics();
-    execute_trajectory_kinematics();
+    execute_plan(move_group_robot_, kinematics_trajectory_plan_,
+                 "Goal Pose Trajectory");
+
+    setup_joint_value_gripper(0.4);
+    execute_plan(move_group_gripper_, gripper_trajectory_plan_,
+                 "Gripper Action");
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+
+    setup_joint_value_gripper(0.8);
+    execute_plan(move_group_gripper_, gripper_trajectory_plan_,
+                 "Gripper Action");
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 
     RCLCPP_INFO(LOGGER, "Complate");
   }
@@ -84,14 +102,20 @@ private:
   rclcpp::Node::SharedPtr move_group_node_;
   rclcpp::executors::SingleThreadedExecutor executor_;
   std::shared_ptr<MoveGroupInterface> move_group_robot_;
+  std::shared_ptr<MoveGroupInterface> move_group_gripper_;
   const JointModelGroup *joint_model_group_robot_;
+  const JointModelGroup *joint_model_group_gripper_;
 
   // trajectory planning variables for robot
   std::vector<double> joint_group_positions_robot_;
   RobotStatePtr current_state_robot_;
   Plan kinematics_trajectory_plan_;
   Pose target_pose_robot_;
-  bool plan_success_robot_ = false;
+
+  // trajectory planning variables for gripper
+  std::vector<double> joint_group_positions_gripper_;
+  RobotStatePtr current_state_gripper_;
+  Plan gripper_trajectory_plan_;
 
   void setup_joint_value_target(float angle0, float angle1, float angle2,
                                 float angle3, float angle4, float angle5) {
@@ -117,19 +141,36 @@ private:
     move_group_robot_->setPoseTarget(target_pose_robot_);
   }
 
-  void plan_trajectory_kinematics() {
-    plan_success_robot_ =
-        (move_group_robot_->plan(kinematics_trajectory_plan_) ==
-         moveit::core::MoveItErrorCode::SUCCESS);
+  void setup_joint_value_gripper(float angle) {
+    joint_group_positions_gripper_[2] = angle;
+    move_group_gripper_->setJointValueTarget(joint_group_positions_gripper_);
   }
 
-  void execute_trajectory_kinematics() {
-    if (plan_success_robot_) {
-      move_group_robot_->execute(kinematics_trajectory_plan_);
-      RCLCPP_INFO(LOGGER, "Robot Kinematics Trajectory Success!");
-    } else {
-      RCLCPP_INFO(LOGGER, "Robot Kinematics Trajectory Failed!");
+  //   void setup_named_pose_gripper(std::string pose_name) {
+  //     move_group_gripper_->setNamedTarget(pose_name);
+  //   }
+
+  bool execute_plan(std::shared_ptr<MoveGroupInterface> move_group, Plan &plan,
+                    const std::string plan_type) {
+    RCLCPP_INFO(LOGGER, "Planning %s", plan_type.c_str());
+
+    bool plan_success =
+        (move_group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+    if (!plan_success) {
+      RCLCPP_ERROR(LOGGER, "Failed planning %s", plan_type.c_str());
+      return false;
     }
+
+    RCLCPP_INFO(LOGGER, "Executing %s", plan_type.c_str());
+    bool result =
+        (move_group->execute(plan) == moveit::core::MoveItErrorCode::SUCCESS);
+    if (!result) {
+      RCLCPP_ERROR(LOGGER, "Failed executing %s", plan_type.c_str());
+      return false;
+    }
+
+    RCLCPP_INFO(LOGGER, "Succeeded %s", plan_type.c_str());
+    return true;
   }
 };
 
