@@ -71,24 +71,47 @@ public:
   void execute_trajectory() {
     RCLCPP_INFO(LOGGER, "Executing Pick And Place");
 
-    // setup_joint_value_target(+0.0000, -2.3562, +1.5708, -1.5708, -1.5708,
-    //                          +0.0000);
-    setup_goal_pose_target(+0.343, +0.132, +0.284, -1.000, +0.000, +0.000,
+    setup_joint_value_target(+0.0000, -2.3562, +1.5708, -1.5708, -1.5708,
+                             +0.0000);
+    if (!execute_plan(move_group_robot_, kinematics_trajectory_plan_,
+                      "Going to Home")) {
+      return;
+    }
+
+    setup_goal_pose_target(+0.343, +0.132, +0.264, -1.000, +0.000, +0.000,
                            +0.000);
-    execute_plan(move_group_robot_, kinematics_trajectory_plan_,
-                 "Goal Pose Trajectory");
+    if (!execute_plan(move_group_robot_, kinematics_trajectory_plan_,
+                      "Going to Pregrasp")) {
+      return;
+    }
+
+    setup_waypoints_target(+0.000, +0.000, -0.060);
+    if (!execute_cartesian("Approaching")) {
+      return;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+
+    setup_waypoints_target(+0.000, +0.000, +0.060);
+    if (!execute_cartesian("Retreating")) {
+      return;
+    }
 
     setup_joint_value_gripper(0.4);
-    execute_plan(move_group_gripper_, gripper_trajectory_plan_,
-                 "Gripper Action");
-    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
+                      "Closing 0.4 angle Gripper")) {
+      return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 
     setup_joint_value_gripper(0.8);
-    execute_plan(move_group_gripper_, gripper_trajectory_plan_,
-                 "Gripper Action");
-    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
+                      "Closing 0.8 angle Gripper")) {
+      return;
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 
-    RCLCPP_INFO(LOGGER, "Complate");
+    RCLCPP_INFO(LOGGER, "Completed Executing Pick And Place");
   }
 
 private:
@@ -97,6 +120,7 @@ private:
   using RobotStatePtr = moveit::core::RobotStatePtr;
   using Plan = MoveGroupInterface::Plan;
   using Pose = geometry_msgs::msg::Pose;
+  using RobotTrajectory = moveit_msgs::msg::RobotTrajectory;
 
   rclcpp::Node::SharedPtr base_node_;
   rclcpp::Node::SharedPtr move_group_node_;
@@ -116,6 +140,12 @@ private:
   std::vector<double> joint_group_positions_gripper_;
   RobotStatePtr current_state_gripper_;
   Plan gripper_trajectory_plan_;
+
+  // cartesian trajectory variables for robot
+  std::vector<Pose> cartesian_waypoints_;
+  RobotTrajectory cartesian_trajectory_plan_;
+  const double jump_threshold_ = 0.0;
+  const double end_effector_step_ = 0.01;
 
   void setup_joint_value_target(float angle0, float angle1, float angle2,
                                 float angle3, float angle4, float angle5) {
@@ -149,6 +179,42 @@ private:
   //   void setup_named_pose_gripper(std::string pose_name) {
   //     move_group_gripper_->setNamedTarget(pose_name);
   //   }
+
+  void setup_waypoints_target(float x_delta, float y_delta, float z_delta) {
+    // initially set target pose to current pose of the robot
+    target_pose_robot_ = move_group_robot_->getCurrentPose().pose;
+    cartesian_waypoints_.push_back(target_pose_robot_);
+    target_pose_robot_.position.x += x_delta;
+    target_pose_robot_.position.y += y_delta;
+    target_pose_robot_.position.z += z_delta;
+    cartesian_waypoints_.push_back(target_pose_robot_);
+  }
+
+  bool execute_cartesian(std::string plan_type) {
+    // execute the planned trajectory to target using cartesian path
+    RCLCPP_INFO(LOGGER, "Planning %s", plan_type.c_str());
+
+    double plan_fraction_robot = move_group_robot_->computeCartesianPath(
+        cartesian_waypoints_, end_effector_step_, jump_threshold_,
+        cartesian_trajectory_plan_);
+    if (plan_fraction_robot < 0.95) {
+      RCLCPP_ERROR(LOGGER, "Failed planning %s", plan_type.c_str());
+      cartesian_waypoints_.clear();
+      return false;
+    }
+
+    RCLCPP_INFO(LOGGER, "Executing %s", plan_type.c_str());
+    bool result = (move_group_robot_->execute(cartesian_trajectory_plan_) ==
+                   moveit::core::MoveItErrorCode::SUCCESS);
+    if (!result) {
+      RCLCPP_ERROR(LOGGER, "Failed executing %s", plan_type.c_str());
+      cartesian_waypoints_.clear();
+      return false;
+    }
+    RCLCPP_INFO(LOGGER, "Succeeded %s", plan_type.c_str());
+    cartesian_waypoints_.clear();
+    return true;
+  }
 
   bool execute_plan(std::shared_ptr<MoveGroupInterface> move_group, Plan &plan,
                     const std::string plan_type) {
