@@ -57,6 +57,8 @@ public:
     current_state_gripper_ = move_group_gripper_->getCurrentState(10);
     current_state_robot_->copyJointGroupPositions(joint_model_group_robot_,
                                                   joint_group_positions_robot_);
+    current_state_robot_->copyJointGroupPositions(
+        joint_model_group_robot_, init_joint_group_positions_robot_);
     current_state_gripper_->copyJointGroupPositions(
         joint_model_group_gripper_, joint_group_positions_gripper_);
     // Set start state of robot to current state
@@ -78,38 +80,88 @@ public:
       return;
     }
 
-    setup_goal_pose_target(+0.343, +0.132, +0.264, -1.000, +0.000, +0.000,
+    setup_goal_pose_target(+0.34, -0.02, +0.264, -1.000, +0.000, +0.000,
                            +0.000);
     if (!execute_plan(move_group_robot_, kinematics_trajectory_plan_,
                       "Going to Pregrasp")) {
       return;
     }
 
-    setup_waypoints_target(+0.000, +0.000, -0.060);
+    rclcpp::sleep_for(std::chrono::seconds(1));
+    setup_joint_value_gripper(0.3);
+    if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
+                      "Opening 0.3 angle Gripper")) {
+      return;
+    }
+    rclcpp::sleep_for(std::chrono::seconds(3));
+    setup_joint_value_gripper(0.0);
+    if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
+                      "Opening 0 angle Gripper")) {
+      return;
+    }
+    rclcpp::sleep_for(std::chrono::seconds(3));
+
+    setup_waypoints_target(+0.000, +0.000, -0.1);
     if (!execute_cartesian("Approaching")) {
       return;
     }
 
-    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    rclcpp::sleep_for(std::chrono::seconds(1));
+    setup_joint_value_gripper(0.3);
+    if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
+                      "Closing 0.3 angle Gripper")) {
+      return;
+    }
+    rclcpp::sleep_for(std::chrono::seconds(3));
+    setup_joint_value_gripper(0.645);
+    if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
+                      "Closing 0.645 angle Gripper")) {
+      return;
+    }
+    rclcpp::sleep_for(std::chrono::seconds(3));
 
-    setup_waypoints_target(+0.000, +0.000, +0.060);
+    setup_waypoints_target(+0.000, +0.000, +0.1);
     if (!execute_cartesian("Retreating")) {
       return;
     }
 
-    setup_joint_value_gripper(0.4);
-    if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
-                      "Closing 0.4 angle Gripper")) {
+    RCLCPP_INFO(LOGGER, "Going to Place");
+    current_state_robot_ = move_group_robot_->getCurrentState(10);
+    current_state_robot_->copyJointGroupPositions(joint_model_group_robot_,
+                                                  joint_group_positions_robot_);
+    setup_joint_value_target(
+        joint_group_positions_robot_[0] + M_PI, joint_group_positions_robot_[1],
+        joint_group_positions_robot_[2], joint_group_positions_robot_[3],
+        joint_group_positions_robot_[4], joint_group_positions_robot_[5]);
+    if (!execute_plan(move_group_robot_, kinematics_trajectory_plan_,
+                      "Going to Pose")) {
       return;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
 
-    setup_joint_value_gripper(0.8);
+    rclcpp::sleep_for(std::chrono::seconds(1));
+    setup_joint_value_gripper(0.3);
     if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
-                      "Closing 0.8 angle Gripper")) {
+                      "Opening 0.3 angle Gripper")) {
       return;
     }
-    std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+    rclcpp::sleep_for(std::chrono::seconds(3));
+    setup_joint_value_gripper(0.0);
+    if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
+                      "Opening 0 angle Gripper")) {
+      return;
+    }
+    rclcpp::sleep_for(std::chrono::seconds(3));
+
+    setup_joint_value_target(init_joint_group_positions_robot_[0],
+                             init_joint_group_positions_robot_[1],
+                             init_joint_group_positions_robot_[2],
+                             init_joint_group_positions_robot_[3],
+                             init_joint_group_positions_robot_[4],
+                             init_joint_group_positions_robot_[5]);
+    if (!execute_plan(move_group_robot_, kinematics_trajectory_plan_,
+                      "Going to Init")) {
+      return;
+    }
 
     RCLCPP_INFO(LOGGER, "Completed Executing Pick And Place");
   }
@@ -132,6 +184,7 @@ private:
 
   // trajectory planning variables for robot
   std::vector<double> joint_group_positions_robot_;
+  std::vector<double> init_joint_group_positions_robot_;
   RobotStatePtr current_state_robot_;
   Plan kinematics_trajectory_plan_;
   Pose target_pose_robot_;
@@ -182,6 +235,7 @@ private:
 
   void setup_waypoints_target(float x_delta, float y_delta, float z_delta) {
     // initially set target pose to current pose of the robot
+    cartesian_waypoints_.clear();
     target_pose_robot_ = move_group_robot_->getCurrentPose().pose;
     cartesian_waypoints_.push_back(target_pose_robot_);
     target_pose_robot_.position.x += x_delta;
@@ -194,10 +248,11 @@ private:
     // execute the planned trajectory to target using cartesian path
     RCLCPP_INFO(LOGGER, "Planning %s", plan_type.c_str());
 
+    move_group_robot_->setStartStateToCurrentState();
     double plan_fraction_robot = move_group_robot_->computeCartesianPath(
         cartesian_waypoints_, end_effector_step_, jump_threshold_,
         cartesian_trajectory_plan_);
-    if (plan_fraction_robot < 0.95) {
+    if (plan_fraction_robot < 0.97) {
       RCLCPP_ERROR(LOGGER, "Failed planning %s", plan_type.c_str());
       cartesian_waypoints_.clear();
       return false;
@@ -220,6 +275,7 @@ private:
                     const std::string plan_type) {
     RCLCPP_INFO(LOGGER, "Planning %s", plan_type.c_str());
 
+    move_group->setStartStateToCurrentState();
     bool plan_success =
         (move_group->plan(plan) == moveit::core::MoveItErrorCode::SUCCESS);
     if (!plan_success) {
