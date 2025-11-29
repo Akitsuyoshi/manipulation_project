@@ -101,26 +101,32 @@ public:
     }
     rclcpp::sleep_for(std::chrono::seconds(3));
 
-    setup_waypoints_target(+0.000, +0.000, -0.1);
+    setup_waypoints_target(+0.000, +0.000, -0.09);
     if (!execute_cartesian("Approaching")) {
       return;
     }
 
     rclcpp::sleep_for(std::chrono::seconds(1));
-    setup_joint_value_gripper(0.3);
+    setup_joint_value_gripper(0.215);
     if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
-                      "Closing 0.3 angle Gripper")) {
+                      "Closing 0.21 angle Gripper")) {
       return;
     }
-    rclcpp::sleep_for(std::chrono::seconds(3));
+    rclcpp::sleep_for(std::chrono::seconds(2));
+    setup_joint_value_gripper(0.43);
+    if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
+                      "Closing 0.43 angle Gripper")) {
+      return;
+    }
+    rclcpp::sleep_for(std::chrono::seconds(2));
     setup_joint_value_gripper(0.645);
     if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
                       "Closing 0.645 angle Gripper")) {
       return;
     }
-    rclcpp::sleep_for(std::chrono::seconds(3));
+    rclcpp::sleep_for(std::chrono::seconds(2));
 
-    setup_waypoints_target(+0.000, +0.000, +0.1);
+    setup_waypoints_target(+0.000, +0.000, +0.09);
     if (!execute_cartesian("Retreating")) {
       return;
     }
