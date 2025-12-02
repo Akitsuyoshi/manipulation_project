@@ -107,19 +107,19 @@ public:
     }
 
     rclcpp::sleep_for(std::chrono::seconds(1));
-    setup_joint_value_gripper(0.215);
+    setup_joint_value_gripper(0.2162);
     if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
                       "Closing 0.21 angle Gripper")) {
       return;
     }
     rclcpp::sleep_for(std::chrono::seconds(2));
-    setup_joint_value_gripper(0.43);
+    setup_joint_value_gripper(0.4324);
     if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
                       "Closing 0.43 angle Gripper")) {
       return;
     }
     rclcpp::sleep_for(std::chrono::seconds(2));
-    setup_joint_value_gripper(0.645);
+    setup_joint_value_gripper(0.6476);
     if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
                       "Closing 0.645 angle Gripper")) {
       return;

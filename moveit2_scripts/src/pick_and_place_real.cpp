@@ -73,6 +73,20 @@ public:
   void execute_trajectory() {
     RCLCPP_INFO(LOGGER, "Executing Pick And Place");
 
+    setup_named_pose(move_group_robot_, "init");
+    if (!execute_plan(move_group_robot_, kinematics_trajectory_plan_,
+                      "Going to Init")) {
+      return;
+    }
+
+    rclcpp::sleep_for(std::chrono::seconds(1));
+    setup_joint_value_gripper(0.78);
+    if (!execute_plan(move_group_gripper_, gripper_trajectory_plan_,
+                      "Closing 0.78 angle Gripper")) {
+      return;
+    }
+    rclcpp::sleep_for(std::chrono::seconds(3));
+
     setup_joint_value_target(+0.0000, -2.3562, +1.5708, -1.5708, -1.5708,
                              +0.0000);
     if (!execute_plan(move_group_robot_, kinematics_trajectory_plan_,
@@ -134,12 +148,11 @@ public:
     }
     rclcpp::sleep_for(std::chrono::seconds(3));
 
-    setup_joint_value_target(init_joint_group_positions_robot_[0],
-                             init_joint_group_positions_robot_[1],
-                             init_joint_group_positions_robot_[2],
-                             init_joint_group_positions_robot_[3],
-                             init_joint_group_positions_robot_[4],
-                             init_joint_group_positions_robot_[5]);
+    setup_named_pose(move_group_robot_, "init");
+    if (!execute_plan(move_group_robot_, kinematics_trajectory_plan_,
+                      "Going to Init")) {
+      return;
+    }
     if (!execute_plan(move_group_robot_, kinematics_trajectory_plan_,
                       "Going to Init")) {
       return;
@@ -211,9 +224,10 @@ private:
     move_group_gripper_->setJointValueTarget(joint_group_positions_gripper_);
   }
 
-  //   void setup_named_pose_gripper(std::string pose_name) {
-  //     move_group_gripper_->setNamedTarget(pose_name);
-  //   }
+  void setup_named_pose(std::shared_ptr<MoveGroupInterface> move_group,
+                        std::string pose_name) {
+    move_group->setNamedTarget(pose_name);
+  }
 
   void setup_waypoints_target(float x_delta, float y_delta, float z_delta) {
     // initially set target pose to current pose of the robot
