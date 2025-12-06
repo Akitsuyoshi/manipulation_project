@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import rclpy
 from rclpy.node import Node
+from custom_interfaces.msg import DetectedSurfaces, DetectedObjects
 
 class ObjectDetection(Node):
     def __init__(self) -> None:
